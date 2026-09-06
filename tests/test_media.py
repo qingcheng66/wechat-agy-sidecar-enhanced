@@ -212,3 +212,41 @@ def test_media_registry_crud(mock_media_dir):
     assert entry["transcription"] == "转写测试文本"
     assert entry["duration_ms"] == 3500
     assert "registered_at" in entry
+
+
+def test_encrypt_bytes_and_roundtrip():
+    from wechat_agy_sidecar.media import encrypt_bytes, decrypt_bytes
+
+    raw_key = b"0123456789abcdef"
+    secret_text = b"Antigravity robot generated image bytes"
+    encrypted = encrypt_bytes(secret_text, raw_key)
+    decrypted = decrypt_bytes(encrypted, raw_key)
+    assert decrypted == secret_text
+
+    # Test with hex key
+    encrypted_hex = encrypt_bytes(secret_text, raw_key.hex())
+    decrypted_hex = decrypt_bytes(encrypted_hex, raw_key.hex())
+    assert decrypted_hex == secret_text
+
+
+def test_extract_image_paths(tmp_path):
+    from wechat_agy_sidecar.media import extract_image_paths
+
+    img1 = tmp_path / "robot.jpg"
+    img1.write_bytes(b"fake_jpg")
+    img2 = tmp_path / "diagram.png"
+    img2.write_bytes(b"fake_png")
+
+    # Sample text with markdown image, file uri, and regular text
+    text = (
+        f"Here is the generated robot:\n"
+        f"![Robot]({img1.resolve()})\n"
+        f"And here is the architecture diagram: file://{img2.resolve()}\n"
+        f"And non-existent image: ![Ghost](/non/existent/ghost.png)\n"
+    )
+
+    cleaned, paths = extract_image_paths(text)
+    assert len(paths) == 2
+    assert img1.resolve() in [p.resolve() for p in paths]
+    assert img2.resolve() in [p.resolve() for p in paths]
+

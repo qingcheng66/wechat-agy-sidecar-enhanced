@@ -33,6 +33,7 @@ class WeChatSidecar:
         self.running = True
         self.conversation_cursors: Dict[str, int] = {}  # conv_id -> last_seen_line_count
         self.pending_resume: Dict[str, List[Dict]] = {}  # user_id -> list of recent conv dicts
+        self.user_context_tokens: Dict[str, str] = {}  # user_id -> latest context_token
 
     def run_onboarding_login(self) -> bool:
         """Runs the interactive QR-code authentication flow."""
@@ -85,6 +86,8 @@ class WeChatSidecar:
           - numeric replies to pending /resume listings
         """
         user_id = msg.from_user_id
+        if msg.context_token:
+            self.user_context_tokens[user_id] = msg.context_token
         text = msg.text.strip()
         force_new_thread = False
         actual_prompt = text
@@ -222,15 +225,22 @@ class WeChatSidecar:
                 except Exception:
                     pass
 
-        # 7. Cancel typing & send reply
+        # 7. Cancel typing & send reply (including any generated/referenced images)
         self.client.send_typing(user_id, typing=False)
+
+        from wechat_agy_sidecar.media import extract_image_paths
+        _, img_paths = extract_image_paths(reply_text)
+        for img_path in img_paths:
+            logger.info(f"Detected image in agent reply, uploading and sending to [{user_id}]: {img_path}")
+            self.client.send_image(user_id, msg.context_token, img_path)
+
         self.client.send_message(user_id, msg.context_token, reply_text)
 
     async def proactive_event_watcher(self):
         """
         Background task continuously monitoring active user conversation transcripts.
-        Pushes any new Assistant responses (e.g. background timers, subagents) and
-        interactive permission request cards (e.g. run_command, ask_question) to WeChat.
+        Pushes any new Assistant responses (e.g. background timers, subagents, generated images)
+        and interactive permission request cards to WeChat.
         """
         logger.info("Proactive event watcher started.")
         while self.running:
@@ -261,7 +271,15 @@ class WeChatSidecar:
                                     content = step.get("content", "").strip()
                                     if content and not step.get("tool_calls"):
                                         logger.info(f"Pushing proactive background message to user [{user_id}] from conv [{conv_id}]")
-                                        self.client.send_message(user_id, "", content)
+                                        context_token = self.user_context_tokens.get(user_id, "")
+
+                                        from wechat_agy_sidecar.media import extract_image_paths
+                                        _, img_paths = extract_image_paths(content)
+                                        for img_path in img_paths:
+                                            logger.info(f"Pushing proactive image to [{user_id}]: {img_path}")
+                                            self.client.send_image(user_id, context_token, img_path)
+
+                                        self.client.send_message(user_id, context_token, content)
                             except Exception as e:
                                 logger.debug(f"Error parsing proactive step: {e}")
 

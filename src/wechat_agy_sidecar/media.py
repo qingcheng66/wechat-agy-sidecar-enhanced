@@ -59,6 +59,75 @@ def decrypt_bytes(encrypted_data: bytes, raw_key: str | bytes) -> bytes:
         return decrypted
 
 
+def encrypt_bytes(plaintext: bytes, raw_key: str | bytes) -> bytes:
+    """Encrypts plaintext with AES-128-ECB and PKCS7 padding."""
+    key: Optional[bytes] = None
+
+    if isinstance(raw_key, bytes):
+        key = raw_key
+    elif isinstance(raw_key, str):
+        if len(raw_key) == 32:  # Hex-encoded string
+            try:
+                key = bytes.fromhex(raw_key)
+            except Exception:
+                pass
+        if not key:
+            try:
+                decoded = base64.b64decode(raw_key)
+                if len(decoded) == 16:
+                    key = decoded
+                elif len(decoded) == 32:
+                    key = bytes.fromhex(decoded.decode("utf-8", errors="ignore"))
+            except Exception:
+                pass
+
+    if not key or len(key) != 16:
+        raise ValueError(f"Invalid AES key format: {raw_key} (expected 16-byte key)")
+
+    padder = padding.PKCS7(128).padder()
+    padded_data = padder.update(plaintext) + padder.finalize()
+
+    cipher = Cipher(algorithms.AES(key), modes.ECB())
+    encryptor = cipher.encryptor()
+    return encryptor.update(padded_data) + encryptor.finalize()
+
+
+IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp"}
+
+
+def extract_image_paths(text: str) -> Tuple[str, list[Path]]:
+    """
+    Scans text for referenced local image files:
+    - Markdown image tags: ![alt](path)
+    - file:///path/to/image.ext
+    - Plain absolute paths: /path/to/image.ext
+    Returns (cleaned_text, list_of_existing_image_paths).
+    """
+    import re
+    found_paths: list[Path] = []
+    seen = set()
+
+    # Pattern 1: Markdown image syntax ![...](file://... or /...)
+    md_img_pattern = re.compile(r'!\[.*?\]\((?:file://)?(/[^\)\s]+)\)')
+    for match in md_img_pattern.finditer(text):
+        path_str = match.group(1)
+        p = Path(path_str)
+        if p.suffix.lower() in IMAGE_EXTENSIONS and p.exists() and p.is_file() and path_str not in seen:
+            found_paths.append(p)
+            seen.add(path_str)
+
+    # Pattern 2: file:///path/to/image.ext
+    file_uri_pattern = re.compile(r'file://(/[^<>\s"\']+)')
+    for match in file_uri_pattern.finditer(text):
+        path_str = match.group(1)
+        p = Path(path_str)
+        if p.suffix.lower() in IMAGE_EXTENSIONS and p.exists() and p.is_file() and path_str not in seen:
+            found_paths.append(p)
+            seen.add(path_str)
+
+    return text, found_paths
+
+
 def download_and_decrypt_media(
     url: str,
     key_str: str,

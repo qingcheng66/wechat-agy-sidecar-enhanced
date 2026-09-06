@@ -40,9 +40,11 @@ A lightweight, robust native sidecar daemon that connects **WeChat** directly wi
 - **Thread Control Commands**:
   - `/new` (or `/reset`): Resets the conversation thread and starts fresh.
   - `/new <prompt>`: Resets thread and immediately executes `<prompt>` in the new conversation.
-- **Multimodal CDN Decryption**:
-  - **Images**: Automatically downloads and decrypts Tencent CDN encrypted payloads (AES-128-ECB) so Antigravity can directly view and analyze user-submitted images.
+- **Multimodal CDN Encryption & Decryption**:
+  - **Inbound Images**: Automatically downloads and decrypts Tencent CDN encrypted payloads (AES-128-ECB) so Antigravity can directly view and analyze user-submitted images.
+  - **Outbound Images & Generation**: Automatically encrypts and uploads generated images (`![...](path)` or `file://...`) to Tencent CDN and sends native WeChat photo cards.
   - **Voice (Silk v3)**: Extracts WeChat ASR transcriptions and provides on-demand `download-media` CLI commands for raw audio inspection when needed.
+  - **CLI Tools**: `download-media` for inspecting inbound audio/files, and `send-image` for sending images directly from terminal or scripts.
 - **Native Antigravity Sidecar**: Configured via standard `sidecar.json` for discovery and lifecycle management by Antigravity runtime.
 - **Incremental Cursor Sync**: Persists `get_updates_buf` to ensure zero message loss and no duplicate responses.
 - **Typing Indicator**: Automatically sends `sendtyping` events while Antigravity generates code and reasoning steps.

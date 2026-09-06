@@ -372,3 +372,55 @@ def test_terminal_qr_display_fallback(capsys):
             TerminalQR.display("https://ilinkai.weixin.qq.com/qr/fallback_link")
             captured = capsys.readouterr()
             assert "https://ilinkai.weixin.qq.com/qr/fallback_link" in captured.out
+
+
+def test_upload_media_success(mock_config):
+    client = WeChatIlinkClient(mock_config)
+
+    # Mock getuploadurl response
+    mock_geturl_resp = MagicMock()
+    mock_geturl_resp.status_code = 200
+    mock_geturl_resp.json.return_value = {"upload_param": "upload_param_token_xyz"}
+
+    # Mock CDN upload response
+    mock_cdn_resp = MagicMock()
+    mock_cdn_resp.status_code = 200
+    mock_cdn_resp.headers = {"x-encrypted-param": "x_param_12345"}
+
+    with patch.object(client.session, "post", side_effect=[mock_geturl_resp, mock_cdn_resp]):
+        res = client.upload_media(b"fake_image_bytes", "user_wx_alice", media_type=1)
+        assert res is not None
+        x_param, b64_key, filesize = res
+        assert x_param == "x_param_12345"
+        assert len(b64_key) > 0
+        assert filesize == 32  # 16 bytes padded with full PKCS7 block to 32 bytes
+
+
+def test_send_image_success(mock_config, tmp_path):
+    client = WeChatIlinkClient(mock_config)
+    img_file = tmp_path / "test.jpg"
+    img_file.write_bytes(b"jpeg_bytes_12345")
+
+    mock_upload_res = ("x_param_abc", "b64_key_def", 16)
+    mock_send_resp = MagicMock()
+    mock_send_resp.status_code = 200
+    mock_send_resp.text = '{"message_id": 12345}'
+
+    with patch.object(client, "upload_media", return_value=mock_upload_res) as mock_upload, \
+         patch.object(client.session, "post", return_value=mock_send_resp) as mock_post:
+        success = client.send_image("user_wx_alice", "ctx_token_1", img_file)
+        assert success is True
+        mock_upload.assert_called_once()
+        mock_post.assert_called_once()
+        args, kwargs = mock_post.call_args
+        msg = kwargs["json"]["msg"]
+        assert msg["message_type"] == 2
+        assert msg["item_list"][0]["type"] == 2
+        assert msg["item_list"][0]["image_item"]["media"]["encrypt_query_param"] == "x_param_abc"
+
+
+def test_send_image_file_not_found(mock_config):
+    client = WeChatIlinkClient(mock_config)
+    success = client.send_image("user_wx_alice", "ctx_token_1", "/non/existent/img.jpg")
+    assert success is False
+

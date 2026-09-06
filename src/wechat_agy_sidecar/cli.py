@@ -61,6 +61,12 @@ def main():
     dl_parser.add_argument("--key", "-k", required=False, help="AES decryption key (hex or base64) (direct mode)")
     dl_parser.add_argument("--output", "-o", required=False, default=None, help="Output destination file path")
 
+    # 3. send-image subcommand
+    img_parser = subparsers.add_parser("send-image", help="Upload and send an image to a WeChat user")
+    img_parser.add_argument("image_path", type=Path, help="Local path to the image file to send")
+    img_parser.add_argument("--user", "-u", required=False, default=None, help="Target WeChat user ID (defaults to active user)")
+    img_parser.add_argument("--config", "-c", type=Path, default=None, help="Path to configuration JSON file")
+
     args = parser.parse_args()
 
     # Logging setup
@@ -104,6 +110,29 @@ def main():
             sys.exit(0)
         else:
             print("❌ Failed to download or decrypt media.", file=sys.stderr)
+            sys.exit(1)
+
+    elif args.subcommand == "send-image":
+        config = SidecarConfig.load(getattr(args, "config", None))
+        target_user = args.user
+        if not target_user:
+            if config.user_conversations:
+                target_user = list(config.user_conversations.keys())[0]
+            elif config.conversation_history:
+                target_user = list(config.conversation_history.keys())[0]
+        if not target_user:
+            print("❌ No target user specified and no active users found in configuration.", file=sys.stderr)
+            sys.exit(1)
+
+        from wechat_agy_sidecar.client import WeChatIlinkClient
+        client = WeChatIlinkClient(config)
+        print(f"Uploading and sending image {args.image_path} to {target_user}...")
+        ok = client.send_image(target_user, "", args.image_path)
+        if ok:
+            print(f"✅ Successfully sent image to {target_user}")
+            sys.exit(0)
+        else:
+            print(f"❌ Failed to send image to {target_user}", file=sys.stderr)
             sys.exit(1)
 
     # Default to running sidecar daemon

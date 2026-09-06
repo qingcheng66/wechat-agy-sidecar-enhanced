@@ -5,14 +5,22 @@ Implements the exact protocol utilized by OpenClaw's WeChat channel.
 
 from __future__ import annotations
 
+import base64
+import hashlib
 import logging
 import random
+import secrets
 import time
 import urllib.parse
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Tuple
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 import requests
+import urllib3.util.connection as urllib3_cn
+
+# Force IPv4 to prevent unreachable IPv6 network timeouts on Tencent CDN
+urllib3_cn.HAS_IPV6 = False
 
 from wechat_agy_sidecar.config import SidecarConfig
 
@@ -297,4 +305,156 @@ class WeChatIlinkClient:
                 all_success = False
 
         return all_success
+
+    def upload_media(
+        self,
+        media_bytes: bytes,
+        to_user_id: str,
+        media_type: int = 1,
+        context_token: str = ""
+    ) -> Optional[Tuple[str, str, int]]:
+        """
+        Uploads encrypted media to Tencent WeChat CDN following the iLink Bot protocol.
+        media_type: 1=IMAGE, 2=VIDEO, 3=FILE, 4=VOICE
+        Returns: (x_encrypted_param, b64_aes_key, filesize) on success, or None on failure.
+        """
+        from wechat_agy_sidecar.media import encrypt_bytes
+
+        rawsize = len(media_bytes)
+        rawfilemd5 = hashlib.md5(media_bytes).hexdigest()
+        filekey = secrets.token_hex(16)
+        aeskey_hex = secrets.token_hex(16)
+        aes_key_bytes = bytes.fromhex(aeskey_hex)
+
+        try:
+            encrypted_data = encrypt_bytes(media_bytes, aes_key_bytes)
+        except Exception as e:
+            logger.error(f"Failed to encrypt media: {e}", exc_info=True)
+            return None
+
+        filesize = len(encrypted_data)
+
+        # 1. Request upload URL
+        upload_req: Dict[str, Any] = {
+            "filekey": filekey,
+            "media_type": media_type,
+            "to_user_id": to_user_id,
+            "rawsize": rawsize,
+            "rawfilemd5": rawfilemd5,
+            "filesize": filesize,
+            "no_need_thumb": True,
+            "aeskey": aeskey_hex,
+            "base_info": {
+                "channel_version": "1.0.0"
+            }
+        }
+        if context_token:
+            upload_req["context_token"] = context_token
+
+        url = f"{self.config.ilink_base_url}/ilink/bot/getuploadurl"
+        try:
+            resp = self.session.post(url, headers=self.config.get_auth_headers(), json=upload_req, timeout=15)
+            if resp.status_code != 200:
+                logger.error(f"getuploadurl failed HTTP {resp.status_code}: {resp.text}")
+                return None
+            data = resp.json()
+            upload_param = data.get("upload_param")
+            if not upload_param:
+                logger.error(f"getuploadurl returned no upload_param: {data}")
+                return None
+
+            # 2. Upload to CDN
+            cdn_url = f"https://novac2c.cdn.weixin.qq.com/c2c/upload?encrypted_query_param={urllib.parse.quote(upload_param)}&filekey={filekey}"
+            cdn_resp = self.session.post(
+                cdn_url,
+                headers={"Content-Type": "application/octet-stream"},
+                data=encrypted_data,
+                timeout=45
+            )
+            if cdn_resp.status_code != 200:
+                logger.error(f"CDN upload failed HTTP {cdn_resp.status_code}")
+                return None
+
+            x_param = cdn_resp.headers.get("x-encrypted-param")
+            if not x_param:
+                logger.error(f"CDN upload response missing x-encrypted-param header: {cdn_resp.headers}")
+                return None
+
+            b64_aes_key = base64.b64encode(aeskey_hex.encode("utf-8")).decode("utf-8")
+            logger.info(f"Media uploaded successfully to CDN: filekey={filekey}, size={filesize}")
+            return x_param, b64_aes_key, filesize
+        except Exception as e:
+            logger.error(f"upload_media error: {e}", exc_info=True)
+            return None
+
+    def send_image(
+        self,
+        to_user_id: str,
+        context_token: str,
+        image_source: Union[str, Path, bytes]
+    ) -> bool:
+        """
+        Uploads an image and sends it as an image message (type=2) to the specified user.
+        """
+        if isinstance(image_source, (str, Path)):
+            p = Path(image_source)
+            if not p.exists():
+                logger.error(f"send_image: file does not exist: {image_source}")
+                return False
+            img_bytes = p.read_bytes()
+        elif isinstance(image_source, bytes):
+            img_bytes = image_source
+        else:
+            logger.error(f"send_image: invalid image source type: {type(image_source)}")
+            return False
+
+        upload_res = self.upload_media(img_bytes, to_user_id, media_type=1, context_token=context_token)
+        if not upload_res:
+            logger.error(f"send_image: failed to upload image to CDN for [{to_user_id}]")
+            return False
+
+        x_param, b64_aes_key, filesize = upload_res
+        client_msg_id = f"img_{int(time.time() * 1000)}_{random.randint(1000, 9999)}"
+        msg_payload: Dict[str, Any] = {
+            "from_user_id": "",
+            "to_user_id": to_user_id,
+            "client_id": client_msg_id,
+            "message_type": 2,  # 2 = BOT outbound
+            "message_state": 2, # 2 = FINISH
+            "item_list": [
+                {
+                    "type": 2,
+                    "image_item": {
+                        "media": {
+                            "encrypt_query_param": x_param,
+                            "aes_key": b64_aes_key,
+                            "encrypt_type": 1
+                        },
+                        "mid_size": filesize
+                    }
+                }
+            ]
+        }
+        if context_token:
+            msg_payload["context_token"] = context_token
+
+        payload = {"msg": msg_payload, "base_info": {"channel_version": "1.0.0"}}
+        url = f"{self.config.ilink_base_url}/ilink/bot/sendmessage"
+        try:
+            resp = self.session.post(
+                url,
+                headers=self.config.get_auth_headers(),
+                json=payload,
+                timeout=15
+            )
+            if resp.status_code == 200:
+                logger.info(f"Successfully sent image to [{to_user_id}] (size={filesize}): {resp.text}")
+                return True
+            else:
+                logger.error(f"send_image failed HTTP {resp.status_code}: {resp.text}")
+                return False
+        except Exception as e:
+            logger.error(f"send_image error: {e}", exc_info=True)
+            return False
+
 
