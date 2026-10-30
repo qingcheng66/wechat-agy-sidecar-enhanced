@@ -167,11 +167,7 @@ class WeChatSidecar:
                 if result.status_code == 401:
                     logger.warning("Session token unauthorized (401).")
                     if self._bot_takeover_detected:
-                        logger.warning(
-                            "Bot has been taken over by another device. "
-                            "To reclaim, run: wechat-agy-sidecar --login"
-                        )
-                        self.running = False
+                        self._go_dormant()
                         break
                     logger.info("Attempting re-login...")
                     if self.run_onboarding_login():
@@ -180,10 +176,10 @@ class WeChatSidecar:
                     else:
                         logger.warning(
                             "Re-login failed. Bot may have been taken over by "
-                            "another device. Stopping sidecar."
+                            "another device."
                         )
                         self._bot_takeover_detected = True
-                        self.running = False
+                        self._go_dormant()
                         break
 
                 if result.status_code == 200:
@@ -256,6 +252,22 @@ class WeChatSidecar:
             pass
 
         asyncio.run(self.poll_loop())
+
+    def _go_dormant(self):
+        """Stop agy and exit cleanly so the service manager won't restart.
+
+        Called when the bot is taken over by another device. The sidecar
+        stops its streaming agy process and exits with code 0. The LaunchAgent
+        (KeepAlive: SuccessfulExit=false) or NSSM (AppExit=Default) will NOT
+        restart the sidecar, leaving the device in a dormant state.
+        """
+        logger.warning(
+            "Bot taken over by another device. "
+            "Sidecar entering dormant state. "
+            "To reclaim, run: wechat-agy-sidecar --login"
+        )
+        self.agy.stop()
+        self.running = False
 
     def stop(self):
         """Stop the sidecar daemon."""

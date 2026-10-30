@@ -150,6 +150,7 @@ $ServiceName = "WeChatAgYSidecar"
 & $NssmExe set $ServiceName AppEnvironmentExtra "WECHAT_SIDECAR_CONFIG=$HomeDir\.gemini\wechat_sidecar_config.json"
 & $NssmExe set $ServiceName AppRestartDelay "3000"
 & $NssmExe set $ServiceName Start SERVICE_AUTO_START
+& $NssmExe set $ServiceName AppExit "Default"
 
 # Create log directory
 $LogDir = "$HomeDir\AppData\Local\wechat-agy-sidecar"
