@@ -56,6 +56,9 @@ class WeChatSidecar:
         self._max_dedup_entries = 200
         self._dedup_window_seconds = 60
 
+        # Bot takeover detection
+        self._bot_takeover_detected = False
+
     def run_onboarding_login(self) -> bool:
         """Runs the interactive QR-code authentication flow."""
         logger.info("Initiating WeChat QR Login Onboarding flow...")
@@ -162,12 +165,26 @@ class WeChatSidecar:
                 )
 
                 if result.status_code == 401:
-                    logger.warning("Session token unauthorized (401). Triggering onboarding...")
+                    logger.warning("Session token unauthorized (401).")
+                    if self._bot_takeover_detected:
+                        logger.warning(
+                            "Bot has been taken over by another device. "
+                            "To reclaim, run: wechat-agy-sidecar --login"
+                        )
+                        self.running = False
+                        break
+                    logger.info("Attempting re-login...")
                     if self.run_onboarding_login():
+                        logger.info("Re-login successful. Continuing...")
                         continue
                     else:
-                        await asyncio.sleep(5)
-                        continue
+                        logger.warning(
+                            "Re-login failed. Bot may have been taken over by "
+                            "another device. Stopping sidecar."
+                        )
+                        self._bot_takeover_detected = True
+                        self.running = False
+                        break
 
                 if result.status_code == 200:
                     if result.new_cursor != self.config.get_updates_buf:
