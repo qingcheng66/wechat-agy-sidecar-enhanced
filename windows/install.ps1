@@ -62,31 +62,73 @@ foreach ($path in @("$env:ProgramFiles\NSSM\nssm.exe", "$env:LOCALAPPDATA\NSSM\n
 }
 
 if (-not $NssmExe) {
-    Write-Host "⚠️ NSSM not found. Downloading..." -ForegroundColor Yellow
-    $NssmZip = Join-Path $env:TEMP "nssm-x64.zip"
-    $NssmExtract = Join-Path $env:TEMP "nssm-extract"
-    Invoke-WebRequest -Uri "https://github.com/SERVICES-management/NSSM/releases/latest/download/nssm-x64-2.24.zip" -OutFile $NssmZip
-    if (-not (Test-Path Expand-Archive)) {
-        New-Item -ItemType Directory -Force -Path $NssmExtract | Out-Null
-    }
-    Expand-Archive -Path $NssmZip -DestinationPath $NssmExtract -Force
-    $NssmExe = Get-ChildItem -Path $NssmExtract -Recurse -Filter "nssm.exe" | Select-Object -First 1 | ForEach-Object { $_.FullName }
+    Write-Host "⚠️ NSSM not found. Trying to install..." -ForegroundColor Yellow
 
+    # Method 1: Try Chocolatey
+    $Choco = Get-Command choco -ErrorAction SilentlyContinue
+    if ($Choco) {
+        Write-Host "  Trying Chocolatey..." -ForegroundColor Cyan
+        choco install nssm -y --no-progress 2>$null
+        if ($LASTEXITCODE -eq 0 -and (Test-Path "$env:ProgramFiles\NSSM\nssm.exe")) {
+            $NssmExe = "$env:ProgramFiles\NSSM\nssm.exe"
+        }
+    }
+
+    # Method 2: Try Winget
     if (-not $NssmExe) {
-        Write-Host "❌ Failed to download NSSM. Please download manually from https://nssm.cc/download" -ForegroundColor Red
+        $Winget = Get-Command winget -ErrorAction SilentlyContinue
+        if ($Winget) {
+            Write-Host "  Trying Winget..." -ForegroundColor Cyan
+            winget install --id MartinStorsjo.NSSM -e --accept-source-agreements --accept-package-agreements --silent 2>$null
+            if ($LASTEXITCODE -eq 0) {
+                foreach ($path in @("$env:ProgramFiles\NSSM\nssm.exe", "$env:LOCALAPPDATA\NSSM\nssm.exe")) {
+                    if (Test-Path $path) {
+                        $NssmExe = $path
+                        break
+                    }
+                }
+            }
+        }
+    }
+
+    # Method 3: Direct download from nssm.cc
+    if (-not $NssmExe) {
+        Write-Host "  Trying direct download from nssm.cc..." -ForegroundColor Cyan
+        $NssmZip = Join-Path $env:TEMP "nssm-x64.zip"
+        $NssmExtract = Join-Path $env:TEMP "nssm-extract"
+        New-Item -ItemType Directory -Force -Path $NssmExtract | Out-Null
+        try {
+            Invoke-WebRequest -Uri "https://nssm.cc/release/nssm-x64-2.24.zip" -OutFile $NssmZip -TimeoutSec 30
+            Expand-Archive -Path $NssmZip -DestinationPath $NssmExtract -Force
+            $NssmExe = Get-ChildItem -Path $NssmExtract -Recurse -Filter "nssm.exe" | Select-Object -First 1 | ForEach-Object { $_.FullName }
+        } catch {
+            Write-Host "  Direct download failed: $($_.Exception.Message)" -ForegroundColor Red
+        }
+
+        if ($NssmExe) {
+            $NssmTarget = Join-Path $env:ProgramFiles "NSSM"
+            New-Item -ItemType Directory -Force -Path $NssmTarget | Out-Null
+            Copy-Item (Join-Path (Split-Path $NssmExe) "nssm.exe") "$NssmTarget\nssm.exe" -Force
+            Copy-Item (Join-Path (Split-Path $NssmExe) "winsw.dll") $NssmTarget -ErrorAction SilentlyContinue
+            Copy-Item (Join-Path (Split-Path $NssmExe) "winsw.exe") $NssmTarget -ErrorAction SilentlyContinue
+            $NssmExe = Join-Path $NssmTarget "nssm.exe"
+            Write-Host "✅ NSSM installed to: $NssmTarget"
+        }
+    }
+
+    # Method 4: Manual instructions
+    if (-not $NssmExe) {
+        Write-Host "" -ForegroundColor Red
+        Write-Host "❌ Could not install NSSM automatically." -ForegroundColor Red
+        Write-Host "   Please download NSSM manually:" -ForegroundColor Yellow
+        Write-Host "   1. Go to https://nssm.cc/download" -ForegroundColor Yellow
+        Write-Host "   2. Download nssm-x64-2.24.zip" -ForegroundColor Yellow
+        Write-Host "   3. Extract and copy nssm.exe, winsw.exe, winsw.dll to:" -ForegroundColor Yellow
+        Write-Host "      $env:ProgramFiles\NSSM\" -ForegroundColor Yellow
+        Write-Host "   4. Re-run this installer" -ForegroundColor Yellow
+        Write-Host "" -ForegroundColor Red
         exit 1
     }
-
-    # Install NSSM to Program Files for system-wide access
-    $NssmTarget = Join-Path $env:ProgramFiles "NSSM"
-    New-Item -ItemType Directory -Force -Path $NssmTarget | Out-Null
-    Copy-Item (Join-Path (Split-Path $NssmExe) "nssm.exe") $NssmTarget
-    Copy-Item (Join-Path (Split-Path $NssmExe) "winsw.dll") $NssmTarget -ErrorAction SilentlyContinue
-    Copy-Item (Join-Path (Split-Path $NssmExe) "winsw.exe") $NssmTarget -ErrorAction SilentlyContinue
-    Copy-Item (Join-Path (Split-Path $NssmExe) "nssm.exe") "$NssmTarget\nssm.exe" -Force
-    $NssmExe = Join-Path $NssmTarget "nssm.exe"
-
-    Write-Host "✅ NSSM installed to: $NssmTarget"
 } else {
     Write-Host "✅ NSSM found: $NssmExe"
 }
@@ -103,7 +145,7 @@ $ServiceName = "WeChatAgYSidecar"
 & $NssmExe set $ServiceName AppDirectory $ProjectDir
 & $NssmExe set $ServiceName AppStdout "$HomeDir\AppData\Local\wechat-agy-sidecar\stdout.log"
 & $NssmExe set $ServiceName AppStderr "$HomeDir\AppData\Local\wechat-agy-sidecar\stderr.log"
-& $NssmExe set $ServiceName AppEnvironmentExtra "PATH=$VenvBin;$env:SystemRoot\System32;$env:SystemRoot"
+& $NssmExe set $ServiceName AppEnvironmentExtra "PATH=$VenvBin;$env:SystemRoot\System32;$env:SystemRoot;$env:PATH"
 & $NssmExe set $ServiceName AppEnvironmentExtra "HOME=$HomeDir"
 & $NssmExe set $ServiceName AppEnvironmentExtra "WECHAT_SIDECAR_CONFIG=$HomeDir\.gemini\wechat_sidecar_config.json"
 & $NssmExe set $ServiceName AppRestartDelay "3000"
@@ -139,7 +181,7 @@ $SidecarJson = @"
   "cwd": "$ProjectDir",
   "restart_policy": "always",
   "env": {
-    "PATH": "$VenvBin;$env:SystemRoot\System32;$env:SystemRoot",
+    "PATH": "$VenvBin;$env:SystemRoot\System32;$env:SystemRoot;$env:PATH",
     "HOME": "$HomeDir",
     "WECHAT_SIDECAR_CONFIG": "$HomeDir\.gemini\wechat_sidecar_config.json"
   },

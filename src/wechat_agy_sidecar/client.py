@@ -39,6 +39,7 @@ class TerminalQR:
             qr.add_data(text_or_url)
             qr.make(fit=True)
             qr.print_ascii(invert=True)
+            print(f"\n👉 Direct Link: {text_or_url}\n")
             return
         except ImportError:
             pass
@@ -49,6 +50,7 @@ class TerminalQR:
             resp = requests.get(f"https://qrenco.de/{encoded_url}", headers={"User-Agent": "curl/7.68.0"}, timeout=5)
             if resp.status_code == 200:
                 print("\n" + resp.text)
+                print(f"\n👉 Direct Link: {text_or_url}\n")
                 return
         except Exception:
             pass
