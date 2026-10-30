@@ -150,10 +150,16 @@ class WeChatIlinkClient:
             raw_msgs = data.get("msgs") or data.get("messages") or []
 
             inbound_list: List[InboundMessage] = []
+            bot_id = self.config.bot_id
             for item in raw_msgs:
                 msg_id = str(item.get("msg_id") or item.get("id") or "")
                 from_user = str(item.get("from_user_id") or item.get("from_user") or "")
                 context_token = str(item.get("context_token") or "")
+
+                # Skip bot's own messages (server echo)
+                if bot_id and from_user == bot_id:
+                    logger.info("Skipping bot's own message (msg_id=%s)", msg_id)
+                    continue
 
                 # Extract content from item_list (text, image, voice, file, video)
                 text = ""

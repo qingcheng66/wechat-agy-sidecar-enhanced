@@ -13,9 +13,11 @@ Supports: macOS (LaunchAgent), Linux (systemd), Windows (NSSM)
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import logging
 import signal
 import time
+from collections import OrderedDict
 from pathlib import Path
 from typing import Optional
 
@@ -47,6 +49,12 @@ class WeChatSidecar:
         )
         self.running = True
         self.user_context_tokens: dict[str, str] = {}
+
+        # Message deduplication (prevents server echo from causing duplicate replies)
+        self._processed_msg_ids: OrderedDict[str, float] = OrderedDict()
+        self._processed_signatures: OrderedDict[str, float] = OrderedDict()
+        self._max_dedup_entries = 200
+        self._dedup_window_seconds = 60
 
     def run_onboarding_login(self) -> bool:
         """Runs the interactive QR-code authentication flow."""
@@ -96,7 +104,10 @@ class WeChatSidecar:
             return
         user_id = list(self.user_context_tokens.keys())[0]
         context_token = self.user_context_tokens[user_id]
-        self.client.send_message(user_id, context_token, message)
+        loop = asyncio.get_event_loop()
+        await loop.run_in_executor(
+            None, self.client.send_message, user_id, context_token, message
+        )
 
     async def handle_message(self, msg):
         """Dispatch an incoming WeChat message via the command router."""
@@ -112,18 +123,24 @@ class WeChatSidecar:
 
         # Send response with media handling
         if response and response not in ("请输入消息内容",):
+            loop = asyncio.get_event_loop()
+
             # Extract and send images
             _, img_paths = extract_image_paths(response)
             for img_path in img_paths:
                 logger.info("Sending image to [%s]: %s", user_id, img_path)
-                self.client.send_image(user_id, msg.context_token, img_path)
+                await loop.run_in_executor(
+                    None, self.client.send_image, user_id, msg.context_token, img_path
+                )
 
             # Send text response (strip image markdown since images are sent separately)
             text_response = response
             if img_paths:
                 text_response = response.replace(f"![image]({img_paths[0]})", "[图片已发送]")
 
-            self.client.send_message(user_id, msg.context_token, text_response)
+            await loop.run_in_executor(
+                None, self.client.send_message, user_id, msg.context_token, text_response
+            )
 
     async def poll_loop(self):
         """Long-polling main event loop with health monitoring."""
@@ -160,6 +177,37 @@ class WeChatSidecar:
                     if result.messages:
                         logger.info("Received %d new message(s).", len(result.messages))
                     for msg in result.messages:
+                        # 1. msg_id dedup (only when msg_id is non-empty)
+                        if msg.msg_id and msg.msg_id in self._processed_msg_ids:
+                            logger.info(
+                                "⚠️ Skipping duplicate message (msg_id=%s): %s",
+                                msg.msg_id, msg.text[:60],
+                            )
+                            continue
+
+                        # 2. Signature dedup (text + from_user_id + context_token, 60s window)
+                        sig = hashlib.md5(
+                            f"{msg.text}|{msg.from_user_id}|{msg.context_token}".encode()
+                        ).hexdigest()
+                        if sig in self._processed_signatures:
+                            age = time.time() - self._processed_signatures[sig]
+                            if age < self._dedup_window_seconds:
+                                logger.info(
+                                    "⚠️ Skipping echo message (sig=%s, age=%.1fs): %s",
+                                    sig[:8], age, msg.text[:60],
+                                )
+                                continue
+
+                        # 3. Record as processed
+                        now = time.time()
+                        if msg.msg_id:
+                            self._processed_msg_ids[msg.msg_id] = now
+                            if len(self._processed_msg_ids) > self._max_dedup_entries:
+                                self._processed_msg_ids.popitem(last=False)
+                        self._processed_signatures[sig] = now
+                        if len(self._processed_signatures) > self._max_dedup_entries:
+                            self._processed_signatures.popitem(last=False)
+
                         asyncio.create_task(self.handle_message(msg))
 
                 elif result.status_code != 200 and result.status_code != 0:
