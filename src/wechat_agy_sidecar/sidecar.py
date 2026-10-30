@@ -27,6 +27,7 @@ from wechat_agy_sidecar.command_router import CommandRouter
 from wechat_agy_sidecar.config import SidecarConfig
 from wechat_agy_sidecar.health_monitor import HealthMonitor
 from wechat_agy_sidecar.media import extract_image_paths
+from wechat_agy_sidecar.sleep_watcher import SleepWatcher
 
 logger = logging.getLogger("wechat_agy_sidecar.daemon")
 
@@ -60,6 +61,9 @@ class WeChatSidecar:
 
         # Bot takeover detection
         self._bot_takeover_detected = False
+
+        # Sleep & Lid-close watcher (auto-exit on sleep, do not wake on lid open)
+        self.sleep_watcher = SleepWatcher(self._on_system_sleep)
 
     def run_onboarding_login(self) -> bool:
         """Runs the interactive QR-code authentication flow."""
@@ -261,7 +265,13 @@ class WeChatSidecar:
             # signal.signal only works in main thread
             pass
 
-        asyncio.run(self.poll_loop())
+        # Start system sleep / lid-close monitor
+        self.sleep_watcher.start()
+
+        try:
+            asyncio.run(self.poll_loop())
+        finally:
+            self.sleep_watcher.stop()
 
     def _go_dormant(self):
         """Stop agy, write dormant flag, and exit cleanly.
@@ -289,8 +299,50 @@ class WeChatSidecar:
         self.agy.stop()
         self.running = False
 
+    def _on_system_sleep(self, reason: str):
+        """Handle system sleep (lid close or suspend).
+
+        Stops agy immediately and exits the process with code 0.
+        Exit code 0 ensures LaunchAgent (with SuccessfulExit: false) or NSSM
+        will NOT restart the process on wake, fulfilling the requirement:
+        'Exit cleanly on lid close, do not auto-restart on lid open'.
+        """
+        import os
+        logger.warning(
+            "System sleep / lid-close detected (%s). Shutting down sidecar & agy cleanly...",
+            reason,
+        )
+        print(f"\n[Sleep] 检测到系统合盖/休眠 ({reason})，正在终止 agy 进程并安全退出...")
+
+        # 1. Stop sleep watcher
+        if hasattr(self, "sleep_watcher") and self.sleep_watcher:
+            self.sleep_watcher.stop()
+
+        # 2. Stop health monitor to prevent auto-restart attempts
+        if hasattr(self, "health") and self.health:
+            self.health.running = False
+
+        # 3. Stop streaming agy process immediately
+        if hasattr(self, "agy") and self.agy:
+            self.agy.stop()
+
+        # 4. Save any pending configs
+        if hasattr(self, "config") and self.config:
+            try:
+                self.config.save()
+            except Exception:
+                pass
+
+        self.running = False
+        print("[Sleep] ✅ 已完成资源清理，Sidecar 已安全退出 (进程码 0)。开盖后不会自动唤醒。")
+
+        # Exit immediately with code 0 (bypasses blocking network calls in worker threads)
+        os._exit(0)
+
     def stop(self):
         """Stop the sidecar daemon."""
         logger.info("Stopping WeChat Antigravity Sidecar...")
         self.running = False
+        if hasattr(self, "sleep_watcher") and self.sleep_watcher:
+            self.sleep_watcher.stop()
         self.agy.stop()

@@ -111,10 +111,6 @@ class AgyStreamingManager:
         Uses asyncio to run the blocking stdin/stdout communication
         in a thread pool to avoid blocking the event loop.
         """
-        if not self.proc or not self.is_alive():
-            logger.warning("agy process not running. Restarting...")
-            if not self.start():
-                return "[ERROR] agy 进程无法启动"
 
         message = {
             "event": "user",
@@ -123,6 +119,10 @@ class AgyStreamingManager:
         self.message_count += 1
 
         async with self._lock:
+            if not self.proc or not self.is_alive():
+                logger.warning("agy process not running. Restarting...")
+                if not self.start():
+                    return "[ERROR] agy 进程无法启动"
             # Run blocking I/O in thread pool
             result = await asyncio.get_event_loop().run_in_executor(
                 None, self._blocking_ask, message, timeout
@@ -131,11 +131,16 @@ class AgyStreamingManager:
 
     def _blocking_ask(self, message: dict, timeout: int) -> str:
         """Blocking implementation of ask() for use in thread pool."""
-        assert self.proc and self.proc.stdin and self.proc.stdout
+        if not self.proc or not self.proc.stdin or not self.proc.stdout or not self.is_alive():
+            return "[ERROR] agy 进程未运行或已终止"
 
         # Write prompt
-        self.proc.stdin.write(json.dumps(message) + "\n")
-        self.proc.stdin.flush()
+        try:
+            self.proc.stdin.write(json.dumps(message) + "\n")
+            self.proc.stdin.flush()
+        except (BrokenPipeError, OSError) as e:
+            logger.error("Failed to write to agy stdin: %s", e)
+            return f"[ERROR] agy 进程通信中断 ({e})"
 
         # Read response events until we get a result
         start = time.time()

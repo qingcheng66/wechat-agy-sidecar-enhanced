@@ -108,7 +108,7 @@ def extract_image_paths(text: str) -> Tuple[str, list[Path]]:
     seen = set()
 
     # Pattern 1: Markdown image syntax ![...](file://... or /...)
-    md_img_pattern = re.compile(r'!\[.*?\]\((?:file://)?(/[^\)\s]+)\)')
+    md_img_pattern = re.compile(r'!\[.*?\]\((?:file://)?((?:[a-zA-Z]:[\\/]|/)[^\)\s]+)\)')
     for match in md_img_pattern.finditer(text):
         path_str = match.group(1)
         p = Path(path_str)
@@ -117,7 +117,7 @@ def extract_image_paths(text: str) -> Tuple[str, list[Path]]:
             seen.add(path_str)
 
     # Pattern 2: file:///path/to/image.ext
-    file_uri_pattern = re.compile(r'file://(/[^<>\s"\']+)')
+    file_uri_pattern = re.compile(r'file://((?:[a-zA-Z]:[\\/]|/)[^<>\s"\']+)')
     for match in file_uri_pattern.finditer(text):
         path_str = match.group(1)
         p = Path(path_str)
