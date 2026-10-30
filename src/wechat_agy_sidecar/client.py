@@ -22,7 +22,7 @@ import urllib3.util.connection as urllib3_cn
 # Force IPv4 to prevent unreachable IPv6 network timeouts on Tencent CDN
 urllib3_cn.HAS_IPV6 = False
 
-from wechat_agy_sidecar.config import SidecarConfig
+from wechat_agy_sidecar.config import SidecarConfig  # noqa: E402
 
 logger = logging.getLogger("wechat_agy_sidecar.client")
 

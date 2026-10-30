@@ -4,15 +4,15 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "wechat-agy-sidecar"
-version = "0.1.0"
-description = "A WeChat bridge sidecar connecting WeChat (iLink Bot protocol) directly with Google Antigravity."
+version = "1.0.0"
+description = "WeChat bridge sidecar for Google Antigravity CLI — persistent streaming mode, 10-command routing, health monitoring with auto-restart, cross-platform (macOS LaunchAgent / Linux systemd / Windows NSSM)"
 readme = "README.md"
 authors = [
-    { name = "caiych" }
+    { name = "qingcheng66" }
 ]
 license = { text = "MIT" }
 requires-python = ">=3.9"
-keywords = ["antigravity", "wechat", "weixin", "ilink", "openclaw", "sidecar", "ai-agent"]
+keywords = ["antigravity", "agy", "wechat", "weixin", "ilink", "sidecar", "streaming", "health-monitor", "nssm", "turbo", "ai-agent", "remote-control"]
 classifiers = [
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.9",
@@ -20,6 +20,9 @@ classifiers = [
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "License :: OSI Approved :: MIT License",
+    "Operating System :: MacOS",
+    "Operating System :: POSIX :: Linux",
+    "Operating System :: Microsoft :: Windows",
     "Operating System :: OS Independent",
     "Topic :: Communications :: Chat",
     "Topic :: Software Development :: Libraries :: Python Modules"

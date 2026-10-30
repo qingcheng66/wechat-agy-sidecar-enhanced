@@ -1,17 +1,13 @@
 {
   "$schema": "https://antigravity.google/schemas/sidecar.json",
   "name": "wechat-agy-sidecar",
-  "description": "WeChat Antigravity Bridge Sidecar Daemon for iLink Bot Protocol",
-  "command": "/home/caiych/.gemini/antigravity-cli/scratch/wechat-agy-sidecar/.venv/bin/wechat-agy-sidecar",
+  "description": "WeChat Antigravity Bridge Sidecar Daemon for iLink Bot Protocol (Enhanced Edition — streaming mode, 10 commands, health monitor)",
+  "command": "<INSTALL_DIR>/.venv/bin/wechat-agy-sidecar",
   "args": [],
-  "cwd": "/home/caiych/.gemini/antigravity-cli/scratch/wechat-agy-sidecar",
+  "cwd": "<INSTALL_DIR>",
   "restart_policy": "always",
   "env": {
-    "PATH": "/home/caiych/.local/bin:/usr/local/bin:/usr/bin:/bin",
-    "HOME": "/home/caiych",
-    "ANTIGRAVITY_AGENTAPI_EXE": "/home/caiych/.local/bin/agy",
-    "WECHAT_SIDECAR_CONFIG": "/home/caiych/.gemini/wechat_sidecar_config.json",
-    "WECHAT_SIDECAR_PROJECT_ID": ""
+    "WECHAT_SIDECAR_CONFIG": "<HOME>/.gemini/wechat_sidecar_config.json"
   },
   "enabled": true
 }

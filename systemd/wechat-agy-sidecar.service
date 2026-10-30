@@ -1,0 +1,18 @@
+[Unit]
+Description=WeChat Antigravity Sidecar Daemon
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=__PROJECT_DIR__
+ExecStart=__VENV_BIN__/wechat-agy-sidecar
+Restart=always
+RestartSec=3
+TimeoutStopSec=3
+
+Environment=PATH=__HOME__/.local/bin:/usr/local/bin:/usr/bin:/bin
+Environment=HOME=__HOME__
+Environment=WECHAT_SIDECAR_CONFIG=__HOME__/.gemini/wechat_sidecar_config.json
+
+[Install]
+WantedBy=default.target

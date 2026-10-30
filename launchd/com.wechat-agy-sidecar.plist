@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.wechat-agy-sidecar</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>__VENV_BIN__/wechat-agy-sidecar</string>
+    </array>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>KeepAlive</key>
+    <true/>
+
+    <key>WorkingDirectory</key>
+    <string>__PROJECT_DIR__</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>__HOME__/.local/bin:/usr/local/bin:/usr/bin:/bin</string>
+        <key>HOME</key>
+        <string>__HOME__</string>
+        <key>WECHAT_SIDECAR_CONFIG</key>
+        <string>__HOME__/.gemini/wechat_sidecar_config.json</string>
+    </dict>
+
+    <key>StandardOutPath</key>
+    <string>__HOME__/Library/Logs/wechat-agy-sidecar.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>__HOME__/Library/Logs/wechat-agy-sidecar.err.log</string>
+</dict>
+</plist>

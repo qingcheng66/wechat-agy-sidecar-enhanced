@@ -215,7 +215,7 @@ def test_media_registry_crud(mock_media_dir):
 
 
 def test_encrypt_bytes_and_roundtrip():
-    from wechat_agy_sidecar.media import encrypt_bytes, decrypt_bytes
+    from wechat_agy_sidecar.media import decrypt_bytes, encrypt_bytes
 
     raw_key = b"0123456789abcdef"
     secret_text = b"Antigravity robot generated image bytes"
