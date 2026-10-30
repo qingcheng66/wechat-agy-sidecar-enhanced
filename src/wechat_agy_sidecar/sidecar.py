@@ -30,6 +30,8 @@ from wechat_agy_sidecar.media import extract_image_paths
 
 logger = logging.getLogger("wechat_agy_sidecar.daemon")
 
+DORMANT_FLAG = Path.home() / ".gemini" / "wechat_sidecar_dormant"
+
 
 class WeChatSidecar:
     """Main daemon integrating agy streaming, command routing, and health monitoring."""
@@ -237,6 +239,14 @@ class WeChatSidecar:
 
     def start(self):
         """Start the sidecar daemon."""
+        # Check dormant flag (bot was taken over by another device)
+        if DORMANT_FLAG.exists():
+            logger.warning(
+                "Sidecar is dormant (bot was taken over by another device). "
+                "To reclaim, run: wechat-agy-sidecar --reclaim"
+            )
+            return
+
         if not self.config.bot_token:
             logger.info("No active token found. Initiating onboarding login...")
             if not self.run_onboarding_login():
@@ -254,18 +264,28 @@ class WeChatSidecar:
         asyncio.run(self.poll_loop())
 
     def _go_dormant(self):
-        """Stop agy and exit cleanly so the service manager won't restart.
+        """Stop agy, write dormant flag, and exit cleanly.
 
         Called when the bot is taken over by another device. The sidecar
-        stops its streaming agy process and exits with code 0. The LaunchAgent
-        (KeepAlive: SuccessfulExit=false) or NSSM (AppExit=Default) will NOT
+        stops its streaming agy process, writes a dormant flag file, and
+        exits with code 0. The service manager (LaunchAgent/NSSM) will NOT
         restart the sidecar, leaving the device in a dormant state.
+
+        To reclaim: wechat-agy-sidecar --reclaim
         """
-        logger.warning(
-            "Bot taken over by another device. "
-            "Sidecar entering dormant state. "
-            "To reclaim, run: wechat-agy-sidecar --login"
-        )
+        if not DORMANT_FLAG.exists():
+            DORMANT_FLAG.write_text(
+                f"Bot taken over at {time.strftime('%Y-%m-%d %H:%M:%S')}. "
+                "To reclaim, run: wechat-agy-sidecar --reclaim\n",
+                encoding="utf-8",
+            )
+            logger.warning(
+                "Bot taken over by another device. "
+                "Sidecar entering dormant state. "
+                "To reclaim, run: wechat-agy-sidecar --reclaim"
+            )
+        else:
+            logger.warning("Sidecar already dormant. Exiting.")
         self.agy.stop()
         self.running = False
 

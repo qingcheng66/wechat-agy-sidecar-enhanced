@@ -43,6 +43,11 @@ def main():
             help="Force interactive QR code onboarding login"
         )
         p.add_argument(
+            "--reclaim",
+            action="store_true",
+            help="Reclaim bot after takeover: removes dormant flag, scans QR, prints restart instructions"
+        )
+        p.add_argument(
             "--system-prompt",
             type=str,
             default=None,
@@ -145,8 +150,32 @@ def main():
     if getattr(args, "login", False):
         success = sidecar.run_onboarding_login()
         sys.exit(0 if success else 1)
-    else:
-        sidecar.start()
+
+    if getattr(args, "reclaim", False):
+        # Remove dormant flag if present
+        from wechat_agy_sidecar.sidecar import DORMANT_FLAG
+        if DORMANT_FLAG.exists():
+            DORMANT_FLAG.unlink()
+            print("✅ Dormant flag removed.")
+        print("Initiating QR login to reclaim bot...")
+        if sidecar.run_onboarding_login():
+            print("\n✅ Bot reclaimed successfully!")
+            import platform
+            if platform.system() == "Windows":
+                print("To start the sidecar service:")
+                print("  Start-Service WeChatAgYSidecar")
+            elif platform.system() == "Darwin":
+                print("To start the sidecar service:")
+                print("  launchctl kickstart -k gui/$(id -u)/com.wechat-agy-sidecar")
+            else:
+                print("To start the sidecar service:")
+                print("  systemctl --user start wechat-agy-sidecar")
+            sys.exit(0)
+        else:
+            print("\n❌ Reclaim failed. Please try again.")
+            sys.exit(1)
+
+    sidecar.start()
 
 
 if __name__ == "__main__":

@@ -227,6 +227,26 @@ The sidecar will:
 2. Route it to agy via streaming
 3. Send the response back to WeChat
 
+### 4. Bot Takeover & Reclaim
+
+When another device scans the QR code with the same WeChat account, the bot is transferred to that device. The original device's sidecar detects this (401 unauthorized), stops its agy process, writes a dormant flag, and exits cleanly — **no manual cleanup needed**.
+
+The dormant flag is at `~/.gemini/wechat_sidecar_dormant` (macOS/Linux) or `%USERPROFILE%\.gemini\wechat_sidecar_dormant` (Windows).
+
+To reclaim the bot on this device:
+
+```bash
+wechat-agy-sidecar --reclaim
+```
+
+This removes the dormant flag, shows a QR code for re-authentication, and prints the command to restart the service:
+
+| Platform | Restart command |
+|:---|:---|
+| macOS | `launchctl kickstart -k gui/$(id -u)/com.wechat-agy-sidecar` |
+| Windows | `Start-Service WeChatAgYSidecar` |
+| Linux | `systemctl --user start wechat-agy-sidecar` |
+
 ### 4. Try Commands
 
 ```
