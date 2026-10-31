@@ -11,8 +11,10 @@ echo.
 set SCRIPT_DIR=%~dp0
 set VENV_BIN=%SCRIPT_DIR%.venv\Scripts
 
-:: Ensure agy is in PATH for this session
-if exist "%LOCALAPPDATA%\agy\bin\agy.exe" (
+:: Ensure agy is in PATH for this session (D drive tools prioritized)
+if exist "D:\work\tools\agy\bin\agy.exe" (
+    set "PATH=D:\work\tools\agy\bin;%PATH%"
+) else if exist "%LOCALAPPDATA%\agy\bin\agy.exe" (
     set "PATH=%LOCALAPPDATA%\agy\bin;%PATH%"
 )
 

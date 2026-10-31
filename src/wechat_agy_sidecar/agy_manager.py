@@ -57,9 +57,13 @@ class AgyStreamingManager:
 
         # Fallback platform checks
         if platform.system() == "Windows":
-            win_path = Path.home() / "AppData" / "Local" / "agy" / "bin" / "agy.exe"
-            if win_path.exists():
-                return str(win_path)
+            for win_path in [
+                Path("D:/work/tools/agy/bin/agy.exe"),
+                Path("D:/work/tools/agy/agy.exe"),
+                Path.home() / "AppData" / "Local" / "agy" / "bin" / "agy.exe",
+            ]:
+                if win_path.exists():
+                    return str(win_path)
         elif platform.system() == "Darwin":
             for mac_path in [
                 Path.home() / ".local" / "bin" / "agy",
@@ -98,6 +102,8 @@ class AgyStreamingManager:
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
+                encoding="utf-8",
+                errors="replace",
                 bufsize=1,
                 cwd=self.workspace,
                 creationflags=_CREATE_FLAGS,
