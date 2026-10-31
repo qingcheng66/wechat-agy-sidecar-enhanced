@@ -47,9 +47,33 @@ class AgyStreamingManager:
         self._output_buffer: list[str] = []
         self._lock = asyncio.Lock()
 
+    @staticmethod
+    def _find_agy_binary() -> str:
+        """Find the agy executable in PATH or standard platform locations."""
+        import shutil
+        found = shutil.which("agy")
+        if found:
+            return found
+
+        # Fallback platform checks
+        if platform.system() == "Windows":
+            win_path = Path.home() / "AppData" / "Local" / "agy" / "bin" / "agy.exe"
+            if win_path.exists():
+                return str(win_path)
+        elif platform.system() == "Darwin":
+            for mac_path in [
+                Path.home() / ".local" / "bin" / "agy",
+                Path("/opt/homebrew/bin/agy"),
+                Path("/usr/local/bin/agy"),
+            ]:
+                if mac_path.exists():
+                    return str(mac_path)
+        return "agy"
+
     def _build_command(self) -> list[str]:
+        agy_bin = self._find_agy_binary()
         cmd = [
-            "agy",
+            agy_bin,
             "--input-format", "stream-json",
             "--output-format", "stream-json",
         ]

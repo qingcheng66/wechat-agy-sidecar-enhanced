@@ -7,6 +7,8 @@ echo "  合盖/休眠自动彻底退出，开盖绝不自启"
 echo "========================================================"
 echo ""
 
+export PATH="$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"
+
 if [ -f "./.venv/bin/wechat-agy-sidecar" ]; then
     echo "[启动] 正在启动 Sidecar..."
     ./.venv/bin/wechat-agy-sidecar "$@"

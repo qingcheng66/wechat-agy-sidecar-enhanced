@@ -11,6 +11,11 @@ echo.
 set SCRIPT_DIR=%~dp0
 set VENV_BIN=%SCRIPT_DIR%.venv\Scripts
 
+:: Ensure agy is in PATH for this session
+if exist "%LOCALAPPDATA%\agy\bin\agy.exe" (
+    set "PATH=%LOCALAPPDATA%\agy\bin;%PATH%"
+)
+
 if exist "%VENV_BIN%\wechat-agy-sidecar.exe" (
     echo [启动] 正在通过虚拟环境启动 Sidecar...
     "%VENV_BIN%\wechat-agy-sidecar.exe" %*
