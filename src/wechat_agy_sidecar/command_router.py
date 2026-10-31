@@ -86,6 +86,14 @@ class CommandRouter:
         if text.lower() == "/model" or text.lower().startswith("/model ") or text in ["模型", "切换模型"]:
             return self._handle_model(text, user_id, context_token)
 
+        # 1c. /workspace (view or switch)
+        if (
+            text.lower() in ["/workspace", "/cd", "工作区", "切换工作区"]
+            or text.lower().startswith("/workspace ")
+            or text.lower().startswith("/cd ")
+        ):
+            return self._handle_workspace(text, user_id, context_token)
+
         # 2. Hybrid commands
         if text.lower().startswith("/new") or text in ["新对话"]:
             return await self._handle_new(text, user_id, context_token)
@@ -177,6 +185,29 @@ class CommandRouter:
         # Collapse multiple hyphens
         slug = re.sub(r"-+", "-", slug)
         return slug
+
+    def _handle_workspace(self, text: str, user_id: str, context_token: str) -> str:
+        """Handle /workspace or /cd command: view or change workspace directory."""
+        parts = text.split(None, 1)
+        arg = parts[1].strip() if len(parts) > 1 else ""
+
+        if not arg:
+            curr = self.agy.workspace
+            return f"📁 当前工作区目录:\n{curr}\n\n👉 发送 /workspace <路径> 或 /cd <路径> 切换，例如:\n/cd D:\\work\\ai"
+
+        target_dir = Path(arg).expanduser()
+        if not target_dir.exists():
+            try:
+                target_dir.mkdir(parents=True, exist_ok=True)
+            except Exception as e:
+                return f"❌ 目录不存在且创建失败: {e}"
+
+        resolved_path = str(target_dir.resolve())
+        self.config.project_id = resolved_path
+        self.config.save()
+        self.agy.workspace = resolved_path
+        self.agy.restart()
+        return f"✅ 工作区已成功切换至:\n📁 {resolved_path}\n🔄 agy 进程已在新工作区重启！" 
 
     async def _handle_new(self, text: str, user_id: str, context_token: str) -> str:
         """Handle /new <prompt>: restart agy and execute prompt."""

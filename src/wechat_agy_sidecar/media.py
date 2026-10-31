@@ -18,7 +18,13 @@ from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 
 logger = logging.getLogger("wechat_agy_sidecar.media")
 
-MEDIA_DIR = Path.home() / ".gemini" / "wechat_media"
+import os
+MEDIA_DIR = Path(
+    os.getenv(
+        "WECHAT_MEDIA_DIR",
+        str(Path("D:/work/ai/wechat_media") if Path("D:/work/ai").exists() else Path.home() / ".gemini" / "wechat_media")
+    )
+)
 
 
 def decrypt_bytes(encrypted_data: bytes, raw_key: str | bytes) -> bytes:
