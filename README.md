@@ -348,3 +348,10 @@ This project is an enhanced edition of [caiych/wechat-agy-sidecar](https://githu
 - Added Windows support via NSSM
 - Added model switching via `/model`
 - Simplified architecture: single streaming process instead of per-message spawning
+
+## 📝 Roadmap & Future Optimizations (待办优化项)
+
+- [ ] **图片自动嗅探器容错增强 (Auto-detect Image Enhancements)**:
+  - **当前状态**：通过 `/file <文件名>` 手动投递已完美支持工作区相对路径；若 AI 输出规范的 Markdown 绝对路径（`![desc](D:\...)`），亦可自动推送。
+  - **待优化项**：将 `extract_image_paths` 升级为像 `extract_file_paths` 一样深度绑定工作区 `workspace` 目录；对大模型输出的非标准语法（如 `• 文件路径: xxx.jpg` 或残缺的 `!描述`）进行更宽松的智能容错嗅探，实现彻底免输命令的 100% 自动图片秒推。
+
