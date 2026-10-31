@@ -465,4 +465,114 @@ class WeChatIlinkClient:
             logger.error(f"send_image error: {e}", exc_info=True)
             return False
 
+    def send_file(
+        self,
+        to_user_id: str,
+        context_token: str,
+        file_source: Union[str, Path, bytes],
+        file_name: Optional[str] = None
+    ) -> bool:
+        """
+        Uploads an encrypted file (media_type=3) and sends it as a native WeChat file item (type=4).
+        Fully conforms to Tencent iLink Bot schema:
+          - media_type: 3 (general file)
+          - item_list item type: 4 (file_item)
+          - enforces 100MB safety ceiling and handles Windows file lock (PermissionError).
+        """
+        if isinstance(file_source, (str, Path)):
+            p = Path(file_source)
+            if not p.exists():
+                logger.error(f"send_file: file does not exist: {file_source}")
+                return False
+            if not p.is_file():
+                logger.error(f"send_file: path is not a file: {file_source}")
+                return False
+
+            file_size_bytes = p.stat().st_size
+            file_size_mb = file_size_bytes / (1024 * 1024)
+            if file_size_mb > 100:
+                logger.error(f"send_file: file size ({file_size_mb:.2f} MB) exceeds WeChat 100MB ceiling: {file_source}")
+                return False
+
+            try:
+                file_bytes = p.read_bytes()
+            except PermissionError as e:
+                logger.error(f"send_file: file is locked by another Windows process: {e}")
+                return False
+            except Exception as e:
+                logger.error(f"send_file: failed to read file bytes: {e}")
+                return False
+
+            if not file_name:
+                file_name = p.name
+        elif isinstance(file_source, bytes):
+            file_bytes = file_source
+            if len(file_bytes) > 100 * 1024 * 1024:
+                logger.error(f"send_file: bytes size ({len(file_bytes)/(1024*1024):.2f} MB) exceeds 100MB ceiling")
+                return False
+            if not file_name:
+                file_name = f"attachment_{int(time.time())}.dat"
+        else:
+            logger.error(f"send_file: unsupported file source type: {type(file_source)}")
+            return False
+
+        raw_size = len(file_bytes)
+        raw_md5 = hashlib.md5(file_bytes).hexdigest()
+
+        # 1. Upload encrypted file to Tencent CDN (media_type=3)
+        upload_res = self.upload_media(file_bytes, to_user_id, media_type=3, context_token=context_token)
+        if not upload_res:
+            logger.error(f"send_file: failed to upload file [{file_name}] to Tencent CDN for [{to_user_id}]")
+            return False
+
+        x_param, b64_aes_key, enc_size = upload_res
+
+        # 2. Assemble iLink SendMessage payload with item_type=4 (file_item)
+        client_msg_id = f"file_{int(time.time() * 1000)}_{random.randint(1000, 9999)}"
+        msg_payload: Dict[str, Any] = {
+            "from_user_id": "",
+            "to_user_id": to_user_id,
+            "client_id": client_msg_id,
+            "message_type": 2,  # 2 = BOT outbound
+            "message_state": 2, # 2 = FINISH
+            "item_list": [
+                {
+                    "type": 4,  # 4 = FILE
+                    "file_item": {
+                        "file_name": file_name,
+                        "len": str(raw_size),
+                        "md5": raw_md5,
+                        "media": {
+                            "encrypt_query_param": x_param,
+                            "aes_key": b64_aes_key,
+                            "encrypt_type": 1
+                        }
+                    }
+                }
+            ]
+        }
+        if context_token:
+            msg_payload["context_token"] = context_token
+
+        payload = {"msg": msg_payload, "base_info": {"channel_version": "1.0.0"}}
+        url = f"{self.config.ilink_base_url}/ilink/bot/sendmessage"
+        try:
+            resp = self.session.post(
+                url,
+                headers=self.config.get_auth_headers(),
+                json=payload,
+                timeout=25
+            )
+            if resp.status_code == 200:
+                logger.info(
+                    f"Successfully sent file [{file_name}] to [{to_user_id}] "
+                    f"(raw_size={raw_size}, enc_size={enc_size}): {resp.text}"
+                )
+                return True
+            else:
+                logger.error(f"send_file failed HTTP {resp.status_code}: {resp.text}")
+                return False
+        except Exception as e:
+            logger.error(f"send_file sendmessage error: {e}", exc_info=True)
+            return False
 

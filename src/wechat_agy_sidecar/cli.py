@@ -72,6 +72,13 @@ def main():
     img_parser.add_argument("--user", "-u", required=False, default=None, help="Target WeChat user ID (defaults to active user)")
     img_parser.add_argument("--config", "-c", type=Path, default=None, help="Path to configuration JSON file")
 
+    # 4. send-file subcommand
+    file_parser = subparsers.add_parser("send-file", help="Upload and send a file to a WeChat user")
+    file_parser.add_argument("file_path", type=Path, help="Local path to the file to send")
+    file_parser.add_argument("--user", "-u", required=False, default=None, help="Target WeChat user ID (defaults to active user)")
+    file_parser.add_argument("--config", "-c", type=Path, default=None, help="Path to configuration JSON file")
+    file_parser.add_argument("--zip", action="store_true", help="Force packaging into ZIP archive before sending")
+
     args = parser.parse_args()
 
     # Logging setup
@@ -138,6 +145,39 @@ def main():
             sys.exit(0)
         else:
             print(f"❌ Failed to send image to {target_user}", file=sys.stderr)
+            sys.exit(1)
+
+    elif args.subcommand == "send-file":
+        config = SidecarConfig.load(getattr(args, "config", None))
+        target_user = args.user
+        if not target_user:
+            if config.user_conversations:
+                target_user = list(config.user_conversations.keys())[0]
+            elif config.conversation_history:
+                target_user = list(config.conversation_history.keys())[0]
+        if not target_user:
+            print("❌ No target user specified and no active users found in configuration.", file=sys.stderr)
+            sys.exit(1)
+
+        file_to_send = args.file_path
+        if not file_to_send.exists():
+            print(f"❌ File does not exist: {file_to_send}", file=sys.stderr)
+            sys.exit(1)
+
+        from wechat_agy_sidecar.media import DANGEROUS_EXTENSIONS, package_file_to_zip
+        if args.zip or file_to_send.suffix.lower() in DANGEROUS_EXTENSIONS:
+            print(f"Packaging {file_to_send.name} to safe ZIP...")
+            file_to_send = package_file_to_zip(file_to_send)
+
+        from wechat_agy_sidecar.client import WeChatIlinkClient
+        client = WeChatIlinkClient(config)
+        print(f"Uploading and sending file {file_to_send} to {target_user}...")
+        ok = client.send_file(target_user, "", file_to_send)
+        if ok:
+            print(f"✅ Successfully sent file to {target_user}")
+            sys.exit(0)
+        else:
+            print(f"❌ Failed to send file to {target_user}", file=sys.stderr)
             sys.exit(1)
 
     # Default to running sidecar daemon

@@ -100,6 +100,82 @@ def encrypt_bytes(plaintext: bytes, raw_key: str | bytes) -> bytes:
 
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp"}
 
+# Dangerous extensions on Windows that WeChat blocks or flags as hazardous.
+# We auto-pack them into a ZIP archive before sending to ensure 100% bypass of WeChat blocking.
+DANGEROUS_EXTENSIONS = {".exe", ".bat", ".cmd", ".ps1", ".vbs", ".msi", ".reg", ".com"}
+
+
+def package_file_to_zip(source_file: Path, output_dir: Optional[Path] = None) -> Path:
+    """
+    Packages a single file into a .zip archive (stored strictly in D: drive media temp directory)
+    to safely bypass WeChat's strict blocking of executable scripts (.bat, .exe, .ps1, etc.).
+    """
+    import zipfile
+
+    target_dir = output_dir or (MEDIA_DIR / "temp_zip")
+    target_dir.mkdir(parents=True, exist_ok=True)
+
+    zip_filename = f"{source_file.stem}_{source_file.suffix.lstrip('.')}.zip"
+    zip_path = target_dir / zip_filename
+
+    with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
+        zf.write(source_file, arcname=source_file.name)
+
+    logger.info("Packaged dangerous Windows file [%s] to safe ZIP [%s]", source_file.name, zip_path)
+    return zip_path
+
+
+def extract_file_paths(text: str, base_dir: Optional[Path] = None) -> Tuple[str, list[Path]]:
+    """
+    Scans text for referenced local files (excluding images which are sent as image cards):
+    - Markdown links: [name](file:///D:/... or D:\\...)
+    - File URI: file:///D:/...
+    - Absolute Windows paths: D:\\path\\to\\file.ext or D:/path/to/file.ext
+    - Workspace relative paths when base_dir is provided
+    Returns (original_text, list_of_existing_file_paths).
+    """
+    import re
+    found_paths: list[Path] = []
+    seen = set()
+
+    def _consider_path(p_candidate: Path):
+        try:
+            if not p_candidate.exists() or not p_candidate.is_file():
+                return
+            # Exclude images (handled by extract_image_paths)
+            if p_candidate.suffix.lower() in IMAGE_EXTENSIONS:
+                return
+            # Check 100MB safety ceiling
+            if p_candidate.stat().st_size > 100 * 1024 * 1024:
+                logger.warning("File %s exceeds 100MB limit, skipping auto-send", p_candidate)
+                return
+            resolved_str = str(p_candidate.resolve())
+            if resolved_str not in seen:
+                found_paths.append(p_candidate)
+                seen.add(resolved_str)
+        except Exception as e:
+            logger.debug("Error checking path candidate %s: %e", p_candidate, e)
+
+    # 1. Markdown link pattern: [label](path)
+    md_link_pattern = re.compile(r'\[.*?\]\((?:file://)?((?:[a-zA-Z]:[\\/]|/)[^\)\s]+)\)')
+    for match in md_link_pattern.finditer(text):
+        _consider_path(Path(match.group(1)))
+
+    # 2. File URI pattern: file:///...
+    file_uri_pattern = re.compile(r'file://((?:[a-zA-Z]:[\\/]|/)[^<>\s"\']+)')
+    for match in file_uri_pattern.finditer(text):
+        _consider_path(Path(match.group(1)))
+
+    # 3. Explicit Windows absolute paths with file extensions
+    # e.g., D:\work\ai\output\report.pdf, "D:\work\ai\test.py"
+    win_path_pattern = re.compile(r'(?:["\'])?([a-zA-Z]:[\\/][^<>\r\n":*?|\'"]+\.[a-zA-Z0-9_-]+)(?:["\'])?')
+    for match in win_path_pattern.finditer(text):
+        raw_p = match.group(1).strip("\"'")
+        _consider_path(Path(raw_p))
+
+    return text, found_paths
+
+
 
 def extract_image_paths(text: str) -> Tuple[str, list[Path]]:
     """

@@ -94,6 +94,14 @@ class CommandRouter:
         ):
             return self._handle_workspace(text, user_id, context_token)
 
+        # 1d. /file or /sendfile (send local file to WeChat)
+        if (
+            text.lower().startswith("/file ")
+            or text.lower().startswith("/sendfile ")
+            or text.lower() in ["/file", "/sendfile", "发文件", "发送文件"]
+        ):
+            return self._handle_file(text, user_id, context_token)
+
         # 2. Hybrid commands
         if text.lower().startswith("/new") or text in ["新对话"]:
             return await self._handle_new(text, user_id, context_token)
@@ -207,7 +215,74 @@ class CommandRouter:
         self.config.save()
         self.agy.workspace = resolved_path
         self.agy.restart()
-        return f"✅ 工作区已成功切换至:\n📁 {resolved_path}\n🔄 agy 进程已在新工作区重启！" 
+        return f"✅ 工作区已成功切换至:\n📁 {resolved_path}\n🔄 agy 进程已在新工作区重启！"
+
+    def _handle_file(self, text: str, user_id: str, context_token: str) -> str:
+        """Handle /file or /sendfile command: send local file to WeChat user."""
+        from wechat_agy_sidecar.media import DANGEROUS_EXTENSIONS, package_file_to_zip
+
+        # Extract path argument
+        parts = text.split(None, 1)
+        arg = parts[1].strip() if len(parts) > 1 else ""
+        # Strip potential surrounding quotes from Windows "Copy as path"
+        arg = arg.strip("\"'")
+
+        if not arg:
+            return (
+                "📁 发送本地文件至微信:\n"
+                "用法: /file <文件路径>\n"
+                "例如:\n"
+                "  /file D:\\work\\ai\\output\\data.xlsx\n"
+                "  /file report.pdf (自动在当前工作区寻找)\n"
+                "💡 提示: Windows 脚本/程序（.bat/.exe/.ps1等）将自动打包为 ZIP 发送，以规避微信拦截。"
+            )
+
+        target_path = Path(arg)
+        if not target_path.is_absolute():
+            # Check within current workspace first
+            workspace_candidate = Path(self.agy.workspace) / target_path
+            if workspace_candidate.exists():
+                target_path = workspace_candidate
+            else:
+                target_path = target_path.resolve()
+
+        if not target_path.exists():
+            return f"❌ 找不到文件:\n{arg}\n当前工作区目录为:\n{self.agy.workspace}"
+
+        if not target_path.is_file():
+            return f"❌ 指定路径是一个目录而非文件:\n{target_path}"
+
+        size_bytes = target_path.stat().st_size
+        size_mb = size_bytes / (1024 * 1024)
+        if size_mb > 100:
+            return f"❌ 文件过大 ({size_mb:.2f} MB)，微信限制单文件最大 100MB。"
+
+        # If it's a dangerous Windows script or executable, package as ZIP
+        file_to_send = target_path
+        is_packaged = False
+        if target_path.suffix.lower() in DANGEROUS_EXTENSIONS:
+            try:
+                file_to_send = package_file_to_zip(target_path)
+                is_packaged = True
+            except Exception as e:
+                return f"❌ 自动压缩打包文件失败: {e}"
+
+        # Send via client
+        try:
+            ok = self.client.send_file(user_id, context_token, file_to_send)
+            if ok:
+                if is_packaged:
+                    return (
+                        f"📦 Windows 脚本已安全打包为 ZIP 并成功发送！\n"
+                        f"📁 文件: {file_to_send.name} ({file_to_send.stat().st_size / 1024:.1f} KB)\n"
+                        f"💡 说明: 已规避微信客户端对 {target_path.suffix} 格式的下载拦截。"
+                    )
+                else:
+                    return f"✅ 文件已成功发送至微信！\n📁 {target_path.name} ({size_bytes / 1024:.1f} KB)"
+            else:
+                return f"❌ 发送文件失败，请检查微信连接状态。"
+        except Exception as e:
+            return f"❌ 发送文件时发生异常: {e}" 
 
     async def _handle_new(self, text: str, user_id: str, context_token: str) -> str:
         """Handle /new <prompt>: restart agy and execute prompt."""

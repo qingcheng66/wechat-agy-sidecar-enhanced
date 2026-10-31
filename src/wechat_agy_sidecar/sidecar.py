@@ -134,7 +134,7 @@ class WeChatSidecar:
         if response and response not in ("请输入消息内容",):
             loop = asyncio.get_event_loop()
 
-            # Extract and send images
+            # 1. Extract and send images
             _, img_paths = extract_image_paths(response)
             for img_path in img_paths:
                 logger.info("Sending image to [%s]: %s", user_id, img_path)
@@ -142,10 +142,39 @@ class WeChatSidecar:
                     None, self.client.send_image, user_id, msg.context_token, img_path
                 )
 
-            # Send text response (strip image markdown since images are sent separately)
+            # 2. Extract and send files (excluding commands like /file that already sent files)
+            sent_files = []
+            if not response.startswith(("✅ 文件已成功发送", "📦 Windows 脚本")):
+                from wechat_agy_sidecar.media import DANGEROUS_EXTENSIONS, extract_file_paths, package_file_to_zip
+                _, file_paths = extract_file_paths(response, base_dir=Path(self.agy.workspace))
+                for fp in file_paths:
+                    file_to_send = fp
+                    is_zip = False
+                    if fp.suffix.lower() in DANGEROUS_EXTENSIONS:
+                        try:
+                            file_to_send = package_file_to_zip(fp)
+                            is_zip = True
+                        except Exception as e:
+                            logger.error("Failed to zip dangerous file %s: %s", fp, e)
+                            continue
+
+                    logger.info("Sending detected file to [%s]: %s", user_id, file_to_send)
+                    sent_ok = await loop.run_in_executor(
+                        None, self.client.send_file, user_id, msg.context_token, file_to_send
+                    )
+                    if sent_ok:
+                        sent_files.append((fp.name, file_to_send.name if is_zip else None))
+
+            # 3. Assemble final text response
             text_response = response
             if img_paths:
                 text_response = response.replace(f"![image]({img_paths[0]})", "[图片已发送]")
+            if sent_files:
+                for orig_name, zip_name in sent_files:
+                    if zip_name:
+                        text_response += f"\n\n📦 [已打包发送文件: {zip_name} (原: {orig_name})]"
+                    else:
+                        text_response += f"\n\n📁 [已发送文件: {orig_name}]"
 
             await loop.run_in_executor(
                 None, self.client.send_message, user_id, msg.context_token, text_response
