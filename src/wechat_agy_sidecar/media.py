@@ -8,6 +8,7 @@ from __future__ import annotations
 import base64
 import json
 import logging
+import os
 import time
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
@@ -18,7 +19,6 @@ from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 
 logger = logging.getLogger("wechat_agy_sidecar.media")
 
-import os
 MEDIA_DIR = Path(
     os.getenv(
         "WECHAT_MEDIA_DIR",

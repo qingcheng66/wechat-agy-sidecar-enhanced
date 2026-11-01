@@ -4,7 +4,6 @@ Tests client.send_file, media.extract_file_paths, media.package_file_to_zip,
 command_router /file handling, and sidecar auto-detection.
 """
 
-import json
 import stat
 import zipfile
 from pathlib import Path
@@ -13,13 +12,12 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from wechat_agy_sidecar.client import WeChatIlinkClient
+from wechat_agy_sidecar.command_router import CommandRouter
 from wechat_agy_sidecar.config import SidecarConfig
 from wechat_agy_sidecar.media import (
-    DANGEROUS_EXTENSIONS,
     extract_file_paths,
     package_file_to_zip,
 )
-from wechat_agy_sidecar.command_router import CommandRouter
 
 
 @pytest.fixture

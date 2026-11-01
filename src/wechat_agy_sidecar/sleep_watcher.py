@@ -14,7 +14,6 @@ from __future__ import annotations
 
 import logging
 import platform
-import sys
 import threading
 import time
 from typing import Callable, Optional
@@ -268,7 +267,7 @@ class SleepWatcher:
     def _macos_loop(self):
         try:
             from AppKit import NSWorkspace, NSWorkspaceWillSleepNotification
-            from Foundation import NSObject, NSRunLoop, NSDate
+            from Foundation import NSDate, NSObject, NSRunLoop
 
             watcher = self
 

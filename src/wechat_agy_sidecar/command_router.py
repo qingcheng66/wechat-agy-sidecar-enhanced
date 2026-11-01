@@ -280,9 +280,9 @@ class CommandRouter:
                 else:
                     return f"✅ 文件已成功发送至微信！\n📁 {target_path.name} ({size_bytes / 1024:.1f} KB)"
             else:
-                return f"❌ 发送文件失败，请检查微信连接状态。"
+                return "❌ 发送文件失败，请检查微信连接状态。"
         except Exception as e:
-            return f"❌ 发送文件时发生异常: {e}" 
+            return f"❌ 发送文件时发生异常: {e}"
 
     async def _handle_new(self, text: str, user_id: str, context_token: str) -> str:
         """Handle /new <prompt>: restart agy and execute prompt."""
